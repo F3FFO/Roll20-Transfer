@@ -9,7 +9,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
-from time import sleep
 
 CONFIG_FILE = "config.prop"
 CONST_URL = "https://app.roll20.net/login"
@@ -102,8 +101,7 @@ def open_character_sheet(driver):
             EC.presence_of_element_located((By.ID, "rightsidebar"))
         )
         driver.find_element(By.ID, "ui-id-2").click()
-        # TODO remove
-        # sleep(3)
+        driver.implicitly_wait(3)
         pg = input("Name of the pg: ")
         vprint(f"Input name: {pg}")
         list = driver.find_elements(By.CLASS_NAME, "character")
@@ -155,33 +153,18 @@ if __name__ == "__main__":
     login(driver, data_login["username"], data_login["password"])
     get_match(driver)
     match = input("Choose the game: ")
+    # TODO remove return if not used
     match_href = select_match(driver, match)
     character_id = open_character_sheet(driver)
 
     print(f"----\n{match_href}\n{character_id}\n----")
 
-    # debug
-    # with open("output", "w") as file:
-    #    file.write(driver.page_source)
-
+    # switch to character frame
     driver.switch_to.active_element
+    iframe = driver.find_element(By.NAME, "iframe_-MsLT4b4wQiFyyX-ytrM")
+    driver.switch_to.frame(iframe)
+    driver.refresh
 
-    # print(driver.find_element(By.XPATH, "/html/body/div[50]").text)
-    # div = driver.find_element(
-    #    By.XPATH,
-    #    "//div[@data-characterid='-MsLT4b4wQiFyyX-ytrM']",
-    # )
+    driver.switch_to.default_content()
 
-    # iframe = div.find_element(By.NAME, "iframe_-MsLT4b4wQiFyyX-ytrM")
-    # iframe = div.find_elements(By.TAG_NAME, "iframe")[0]
-
-    driver.switch_to.frame("iframe_-MsLT4b4wQiFyyX-ytrM")
-
-    # print(driver.find_element(By.XPATH, "/html/body/div[1]/div/ul/li[1]/a").text)
-    with open("output2", "w") as file:
-        file.write(driver.page_source)
-
-    # driver.switch_to.default_content()
-
-    driver.close()
-    # driver.quit()
+    driver.quit()
