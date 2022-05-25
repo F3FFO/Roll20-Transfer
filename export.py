@@ -9,6 +9,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
+import markdownify
 
 CONFIG_FILE = "config.prop"
 CONST_URL = "https://app.roll20.net/login"
@@ -87,10 +88,7 @@ def select_match(driver, match):
             "(//div[@class='col-md-8 homegamelist']/div[@class='listing'])["
             + match
             + "]/div[2]/a[2]",
-        )
-        res = temp.get_attribute("href")
-        temp.click()
-        return res
+        ).click()
     except:
         error("match error selected!")
 
@@ -101,7 +99,10 @@ def open_character_sheet(driver):
             EC.presence_of_element_located((By.ID, "rightsidebar"))
         )
         driver.find_element(By.ID, "ui-id-2").click()
-        driver.implicitly_wait(3)
+        WebDriverWait(driver, 15, 1).until(
+            EC.presence_of_element_located((By.ID, "journalfolderroot"))
+        )
+        # driver.implicitly_wait(3)
         pg = input("Name of the pg: ")
         vprint(f"Input name: {pg}")
         list = driver.find_elements(By.CLASS_NAME, "character")
@@ -121,6 +122,22 @@ def open_character_sheet(driver):
         return res
     except:
         error("ERROR: opening character sheet!")
+
+
+def export_bio(driver):
+    # try:
+    WebDriverWait(driver, 10).until(
+        EC.invisibility_of_element((By.ID, "animation-container"))
+    )
+    WebDriverWait(driver, 15, 1).until(
+        EC.presence_of_element_located((By.XPATH, "//div[@class='bioinfo tab-pane']"))
+    )
+    note = driver.find_element(By.XPATH, "//div[@class='bioinfo tab-pane']")
+
+    print(markdownify.markdownify(note.get_attribute("outerHTML"), heading_style="ATX"))
+
+
+# except:
 
 
 is_ci = "CI" in os.environ and os.environ["CI"] == "true"
@@ -153,18 +170,17 @@ if __name__ == "__main__":
     login(driver, data_login["username"], data_login["password"])
     get_match(driver)
     match = input("Choose the game: ")
-    # TODO remove return if not used
-    match_href = select_match(driver, match)
+    select_match(driver, match)
     character_id = open_character_sheet(driver)
-
-    print(f"----\n{match_href}\n{character_id}\n----")
 
     # switch to character frame
     driver.switch_to.active_element
-    iframe = driver.find_element(By.NAME, "iframe_-MsLT4b4wQiFyyX-ytrM")
+    iframe = driver.find_element(By.NAME, f"iframe_{character_id}")
     driver.switch_to.frame(iframe)
     driver.refresh
 
-    driver.switch_to.default_content()
+    export_bio(driver)
 
-    driver.quit()
+    # switch to default content
+    # driver.switch_to.default_content()
+    # driver.quit()
