@@ -1,7 +1,6 @@
 import argparse
 import os
 import sys
-from thefuzz import fuzz
 from os.path import exists
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
@@ -11,6 +10,7 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 import markdownify
 
+DRIVER = "./geckodriver"
 CONFIG_FILE = "config.prop"
 CONST_URL = "https://app.roll20.net/login"
 
@@ -30,10 +30,11 @@ def vprint(str):
 
 def setup_selenium():
     options = Options()
-    # TODO add a not
-    if args.debug:
+    if not args.debug:
         options.add_argument("--headless")
-    service = Service(executable_path="./geckodriver")
+    vprint(f"init driver...")
+    service = Service(executable_path=DRIVER)
+    vprint(f"driver found -> {DRIVER}")
     return webdriver.Firefox(service=service, options=options)
 
 
@@ -67,11 +68,13 @@ def login(driver, username, psw):
 def get_match(driver):
     try:
         WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "div.homegamelist"))
+            EC.presence_of_element_located(
+                (By.XPATH, "//div[@class='col-md-8 homegamelist']")
+            )
         )
         matches = driver.find_elements(
             By.XPATH,
-            "//div[@class='col-md-8 homegamelist']/div[@class='listing']/div[2]/a[1]",
+            "//div[@class='col-md-8 homegamelist']/div[@class='listing']/div[@class='gameinfo']/a[1]",
         )
         index = 1
         for item in matches:
@@ -83,7 +86,14 @@ def get_match(driver):
 
 def select_match(driver, match):
     try:
-        temp = driver.find_element(
+        match_name = driver.find_element(
+            By.XPATH,
+            "//div[@class='col-md-8 homegamelist']/div[@class='listing']["
+            + match
+            + "]/div[@class='gameinfo']/a[1]",
+        )
+        vprint(f"match selected -> {match_name.text}")
+        driver.find_element(
             By.XPATH,
             "(//div[@class='col-md-8 homegamelist']/div[@class='listing'])["
             + match
@@ -93,7 +103,7 @@ def select_match(driver, match):
         error("match error selected!")
 
 
-def open_character_sheet(driver):
+def get_character_sheet(driver):
     try:
         WebDriverWait(driver, 15, 1).until(
             EC.presence_of_element_located((By.ID, "rightsidebar"))
@@ -102,42 +112,50 @@ def open_character_sheet(driver):
         WebDriverWait(driver, 15, 1).until(
             EC.presence_of_element_located((By.ID, "journalfolderroot"))
         )
-        # driver.implicitly_wait(3)
-        pg = input("Name of the pg: ")
-        vprint(f"Input name: {pg}")
+        driver.implicitly_wait(3)
         list = driver.find_elements(By.CLASS_NAME, "character")
-        index = 0
+        index = 1
         for elem in list:
-            lev = fuzz.partial_ratio(pg.lower(), elem.text.lower())
-            vprint(
-                f"Levenshtein distance between {pg.lower()} and {elem.text.lower()} is: {lev}"
-            )
-            if lev > 60:
-                vprint(f"Character found!")
-                break
+            print("\t{}) {}".format(index, elem.text))
             index = index + 1
 
-        res = list[index].get_attribute("data-itemid")
-        list[index].click()
-        return res
     except:
         error("ERROR: opening character sheet!")
 
 
-def export_bio(driver):
-    # try:
-    WebDriverWait(driver, 10).until(
-        EC.invisibility_of_element((By.ID, "animation-container"))
-    )
-    WebDriverWait(driver, 15, 1).until(
-        EC.presence_of_element_located((By.XPATH, "//div[@class='bioinfo tab-pane']"))
-    )
-    note = driver.find_element(By.XPATH, "//div[@class='bioinfo tab-pane']")
+def select_character_sheet(driver, character):
+    try:
+        elem = driver.find_elements(By.CLASS_NAME, "character")
+        elem = elem[character - 1]
+        character_id = elem.get_attribute("data-itemid")
+        character_name = elem.text
+        vprint(f"character selected -> {character_name}")
+        elem.click()
+        return character_id, character_name
+    except:
+        error("ERROR: opening character sheet!")
 
-    print(markdownify.markdownify(note.get_attribute("outerHTML"), heading_style="ATX"))
 
-
-# except:
+def export_bio(driver, file):
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.invisibility_of_element((By.ID, "animation-container"))
+        )
+        WebDriverWait(driver, 15, 1).until(
+            EC.presence_of_element_located(
+                (By.XPATH, "//div[@class='bioinfo tab-pane']")
+            )
+        )
+        note = driver.find_element(By.XPATH, "//div[@class='bioinfo tab-pane']")
+        vprint("bio found!\nwriting bio...")
+        file.write(
+            markdownify.markdownify(
+                note.get_attribute("outerHTML"), heading_style="ATX"
+            )
+        )
+        vprint("bio writed!")
+    except:
+        error("ERROR: exporting bio!")
 
 
 is_ci = "CI" in os.environ and os.environ["CI"] == "true"
@@ -160,18 +178,28 @@ if __name__ == "__main__":
     )
     parser.add_argument("-u", "--update", action="store_true", help="update webdriver")
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose output")
-
     args = parser.parse_args()
 
+    # init selenium
     driver = setup_selenium()
+    vprint(f"driver initilized")
     driver.get(CONST_URL)
+    vprint(f"loading url -> {CONST_URL}")
 
+    # login to roll20
+    vprint(f"logging in")
     data_login = read_config()
     login(driver, data_login["username"], data_login["password"])
+
+    # get and select match
     get_match(driver)
     match = input("Choose the game: ")
     select_match(driver, match)
-    character_id = open_character_sheet(driver)
+
+    # get and select character
+    get_character_sheet(driver)
+    character = input("Choose the character: ")
+    character_id, character_name = select_character_sheet(driver, int(character))
 
     # switch to character frame
     driver.switch_to.active_element
@@ -179,8 +207,16 @@ if __name__ == "__main__":
     driver.switch_to.frame(iframe)
     driver.refresh
 
-    export_bio(driver)
+    if args.export:
+        # create folder if not exist
+        if not os.path.exists("./out"):
+            os.makedirs("./out")
+        character_name = character_name.lower()
+        character_name = character_name.replace(" ", "_")
+        # export character
+        with open(f"./out/{character_name}.md", "w") as file:
+            export_bio(driver, file)
 
     # switch to default content
-    # driver.switch_to.default_content()
+    driver.switch_to.default_content()
     # driver.quit()
