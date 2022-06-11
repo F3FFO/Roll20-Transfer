@@ -1,1 +1,4 @@
+/geckodriver
 /geckodriver.log
+/__pycache__
+export/__pycache__
